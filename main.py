@@ -129,7 +129,7 @@ def build_parser():
     parser.add_argument("--neurons-per-hidden-layer", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=1000)
     parser.add_argument("--replicate-seed", type=int, help="run one replicate; default runs seeds 0 through 4")
-    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--checkpoint", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--output", default="out/run_data.jsonl", help="append run records to this JSONL file")
     return parser
