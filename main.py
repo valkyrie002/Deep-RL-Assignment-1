@@ -8,21 +8,152 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 
 from src.data_loader import (
     DATA_PATH,
     apply_standardization,
     fit_standardization,
     get_evaluation_data,
+    get_test_data,
     get_training_subset,
 )
 from src.model import NeuralNetwork
-from src.training import train_model
+from src.training import evaluate_model_rmse, train_model
 
 
 DEFAULT_REPLICATE_SEEDS = [0, 1, 2, 3, 4]
 DEFAULT_LEARNING_RATES = [1e-4, 1e-3, 1e-2, 1e-1]
 DEFAULT_TRAINING_SIZES = [1000, 10000, 100000]
+
+
+def plot_rmse_vs_epoch(jsonl_path="out/run_data.jsonl", output_path="out/rmse_vs_epoch.png", show=False, step=20):
+    """Plot mean evaluation RMSE by epoch for each training_size/learning_rate pair."""
+    epoch_values = {}
+    with open(jsonl_path, "r", encoding="utf-8") as run_file:
+        for line in run_file:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            training_size = record.get("training_size")
+            learning_rate = record.get("learning_rate")
+            if training_size is None or learning_rate is None:
+                continue
+            for point in record.get("epoch_eval_rmse", []):
+                epoch = int(point.get("epoch"))
+                if epoch % step != 0:
+                    continue
+                rmse = float(point.get("rmse"))
+                key = (int(training_size), float(learning_rate))
+                epoch_values.setdefault(key, {})
+                epoch_values[key].setdefault(epoch, []).append(rmse)
+
+    if not epoch_values:
+        raise ValueError(f"No run data found in {jsonl_path!r}")
+
+    fig, ax = plt.subplots(figsize=(11, 7))
+    for (training_size, learning_rate), epoch_map in sorted(epoch_values.items(), key=lambda item: (item[0][0], item[0][1])):
+        epochs = sorted(epoch_map)
+        mean_rmse = [float(np.mean(epoch_map[epoch])) for epoch in epochs]
+        label = f"train={training_size}, lr={learning_rate:g}"
+        ax.plot(epochs, mean_rmse, marker="o", linewidth=2, label=label)
+
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Mean evaluation RMSE")
+    ax.set_title(f"RMSE vs. epoch (every {step} epochs), averaged across replicate seeds")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+    fig.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
+    return fig
+
+
+def plot_rmse_by_configuration(jsonl_path="out/run_data.jsonl", out_dir="out/plots", step=20, show=False):
+    """Create one RMSE-vs-epoch plot per training_size/learning_rate configuration."""
+    configuration_data = {}
+    with open(jsonl_path, "r", encoding="utf-8") as run_file:
+        for line in run_file:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            training_size = record.get("training_size")
+            learning_rate = record.get("learning_rate")
+            if training_size is None or learning_rate is None:
+                continue
+            key = (int(training_size), float(learning_rate))
+            configuration_data.setdefault(key, {})
+            for point in record.get("epoch_eval_rmse", []):
+                epoch = int(point.get("epoch"))
+                if epoch % step != 0:
+                    continue
+                configuration_data[key].setdefault(epoch, []).append(float(point.get("rmse")))
+
+    if not configuration_data:
+        raise ValueError(f"No run data found in {jsonl_path!r}")
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    created = []
+    for (training_size, learning_rate), epoch_map in sorted(configuration_data.items(), key=lambda item: (item[0][0], item[0][1])):
+        epochs = sorted(epoch_map)
+        mean_rmse = [float(np.mean(epoch_map[epoch])) for epoch in epochs]
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(epochs, mean_rmse, marker="o", linewidth=2, color="tab:blue")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Mean evaluation RMSE")
+        ax.set_title(f"Training size={training_size}, learning rate={learning_rate:g}")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+
+        filename = f"train{training_size}_lr{learning_rate:g}.png"
+        save_path = out_dir / filename
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        if show:
+            plt.show()
+        plt.close(fig)
+        created.append(str(save_path))
+
+    return created
+
+
+def summarize_test_rmse_by_configuration(jsonl_path="out/run_data.jsonl"):
+    """Summarize mean and standard deviation of test RMSE for each training_size/learning_rate configuration."""
+    grouped = {}
+    with open(jsonl_path, "r", encoding="utf-8") as run_file:
+        for line in run_file:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            training_size = record.get("training_size")
+            learning_rate = record.get("learning_rate")
+            test_rmse = record.get("test_rmse")
+            if training_size is None or learning_rate is None or test_rmse is None:
+                continue
+            key = (int(training_size), float(learning_rate))
+            grouped.setdefault(key, []).append(float(test_rmse))
+
+    summary = {}
+    for key, values in grouped.items():
+        arr = np.asarray(values, dtype=float)
+        summary[key] = {
+            "training_size": key[0],
+            "learning_rate": key[1],
+            "mean_test_rmse": float(arr.mean()),
+            "std_test_rmse": float(arr.std(ddof=1)) if len(arr) > 1 else 0.0,
+            "n_runs": len(arr),
+            "test_rmse_values": values,
+        }
+    return summary
 
 
 def initialize_experiment_model(hidden_layers=1, neurons_per_hidden_layer=64):
@@ -47,6 +178,7 @@ def run_experiments(args):
 
     replicate_seeds = [args.replicate_seed] if args.replicate_seed is not None else DEFAULT_REPLICATE_SEEDS
     raw_evaluation_features, raw_evaluation_labels = get_evaluation_data()
+    raw_test_features, raw_test_labels = get_test_data()
     training_data = {}
     normalization_data = {}
     for size in set(training_sizes):
@@ -93,6 +225,14 @@ def run_experiments(args):
                 return_metrics=True,
                 rmse_scale=statistics["label_std"].item(),
             )
+            test_features, test_labels = apply_standardization(raw_test_features, raw_test_labels, statistics)
+            test_rmse = evaluate_model_rmse(
+                test_features,
+                test_labels,
+                model,
+                params,
+                scale=statistics["label_std"].item(),
+            )
             run_record = {
                 "run_id": uuid.uuid4().hex,
                 "run_started_at_utc": run_started_at,
@@ -109,6 +249,7 @@ def run_experiments(args):
                 "optimizer": "Adam",
                 "epochs": args.epochs,
                 "checkpoint_enabled": args.checkpoint,
+                "test_rmse": test_rmse,
                 "normalization": {
                     key: value.squeeze(0).tolist() for key, value in statistics.items()
                 },

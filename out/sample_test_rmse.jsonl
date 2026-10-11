@@ -1,0 +1,3 @@
+{"training_size": 1000, "learning_rate": 0.001, "test_rmse": 10.0}
+{"training_size": 1000, "learning_rate": 0.001, "test_rmse": 14.0}
+{"training_size": 1000, "learning_rate": 0.001, "test_rmse": 18.0}

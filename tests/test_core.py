@@ -7,7 +7,7 @@ from src.data_loader import (
     fit_standardization,
     get_training_subset,
 )
-from src.training import train_model, evaluate_model
+from src.training import train_model, evaluate_model, evaluate_model_rmse
 
 
 def test_neural_network_forward_pass():
@@ -89,6 +89,18 @@ def test_training_returns_epoch_rmse_and_best_epoch():
     assert metrics["training_time_seconds"] >= 0
     expected_raw_rmse = evaluate_model(eval_features, eval_labels, model, params).sqrt().item() * 3.5
     assert abs(metrics["epoch_eval_rmse"][-1]["rmse"] - expected_raw_rmse) < 1e-6
+
+
+def test_evaluate_model_rmse_matches_expected_value():
+    model = NeuralNetwork(3, 1, 1, 8)
+    features = torch.tensor([[1.0, 2.0, 3.0], [2.0, 3.0, 4.0], [3.0, 4.0, 5.0]])
+    labels = torch.tensor([[1.0], [2.0], [3.0]])
+    scale = 2.5
+
+    raw_rmse = evaluate_model_rmse(features, labels, model, {}, scale=scale)
+    expected = evaluate_model(features, labels, model, {}).sqrt().item() * scale
+
+    assert abs(raw_rmse - expected) < 1e-6
 
 
 def test_standardization_is_fitted_from_training_data_and_reversible():

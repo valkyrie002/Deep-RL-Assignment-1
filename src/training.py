@@ -103,7 +103,7 @@ def train_model(
             optimizer.step()
 
         if has_evaluation_data:
-            eval_rmse = evaluate_model(ev_features, ev_labels, model, params).sqrt().item() * rmse_scale
+            eval_rmse = evaluate_model_rmse(ev_features, ev_labels, model, params, scale=rmse_scale)
             epoch_eval_rmse.append({"epoch": epoch, "rmse": eval_rmse})
             if eval_rmse < best_val:
                 best_val = eval_rmse
@@ -173,6 +173,10 @@ def evaluate_model(eval_features, eval_labels, model, params):
         loss = criterion(output, eval_labels)
     model.train(previous_mode)
     return loss
+
+
+def evaluate_model_rmse(eval_features, eval_labels, model, params, scale=1.0):
+    return evaluate_model(eval_features, eval_labels, model, params).sqrt().item() * scale
 
 
 def loss_function(predictions, labels):
