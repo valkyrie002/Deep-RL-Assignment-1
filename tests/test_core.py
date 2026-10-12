@@ -32,6 +32,37 @@ def test_train_model_reduces_loss():
     assert final_loss < initial_loss
 
 
+def test_train_model_applies_learning_decay_each_epoch(monkeypatch):
+    model = NeuralNetwork(3, 1, 1, 8)
+    features = torch.randn(32, 3)
+    labels = torch.randn(32, 1)
+
+    observed_lrs = []
+
+    class RecordingAdam:
+        def __init__(self, params, lr):
+            self.param_groups = [{"params": list(params), "lr": lr}]
+            observed_lrs.append(float(self.param_groups[0]["lr"]))
+
+        def zero_grad(self):
+            pass
+
+        def step(self):
+            observed_lrs.append(float(self.param_groups[0]["lr"]))
+
+    monkeypatch.setattr("src.training.optim.Adam", RecordingAdam)
+
+    train_model(
+        features,
+        labels,
+        model,
+        {"learning_rate": 1e-2, "learning_decay": 0.5, "epoch": 3, "batch_size": 8, "seed": 0},
+    )
+
+    assert observed_lrs[0] == 1e-2
+    assert observed_lrs[-1] == 1e-2 * (0.5 ** 2)
+
+
 def test_checkpoint_uses_validation_improvement_only():
     model = NeuralNetwork(3, 1, 1, 8)
     train_features = torch.randn(64, 3)

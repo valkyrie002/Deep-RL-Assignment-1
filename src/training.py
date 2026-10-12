@@ -54,12 +54,15 @@ def train_model(
     rmse_scale=1.0,
 ):
     learning_rate = params.get("learning_rate", 1e-3)
+    learning_decay = float(params.get("learning_decay", 1.0))
     epochs = int(params.get("epoch", 10))
     batch_size = int(params.get("batch_size", len(features)))
     if epochs < 1:
         raise ValueError("epoch count must be at least 1")
     if batch_size < 1:
         raise ValueError("batch size must be at least 1")
+    if learning_decay <= 0:
+        raise ValueError("learning_decay must be positive")
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
@@ -111,6 +114,9 @@ def train_model(
                 if checkpoint:
                     best_state = copy.deepcopy(model.state_dict())
             model.train()
+
+        for param_group in optimizer.param_groups:
+            param_group["lr"] *= learning_decay
 
     if checkpoint and best_state is not None:
         model.load_state_dict(best_state)

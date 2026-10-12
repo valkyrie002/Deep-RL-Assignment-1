@@ -208,6 +208,7 @@ def run_experiments(args):
             model = initialize_experiment_model(args.hidden_layers, args.neurons_per_hidden_layer)
             params = {
                 "learning_rate": learning_rate,
+                "learning_decay": args.learning_decay,
                 "epoch": args.epochs,
                 "batch_size": args.batch_size,
                 "seed": replicate_seed,
@@ -241,6 +242,7 @@ def run_experiments(args):
                 "replicate_seed": replicate_seed,
                 "training_size": training_size,
                 "learning_rate": learning_rate,
+                "learning_decay": args.learning_decay,
                 "hidden_layers": args.hidden_layers,
                 "neurons_per_hidden_layer": args.neurons_per_hidden_layer,
                 "input_dimension": 14,
@@ -266,6 +268,7 @@ def build_parser():
     parser.add_argument("--sweep", action="store_true", help="sweep learning rates and training sizes")
     parser.add_argument("--training-size", type=int, choices=DEFAULT_TRAINING_SIZES)
     parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--learning-decay", type=float, default=1.0, help="multiply the learning rate by this factor after each epoch")
     parser.add_argument("--hidden-layers", type=int, default=1)
     parser.add_argument("--neurons-per-hidden-layer", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=1000)
@@ -287,6 +290,8 @@ def main():
         parser.error("--hidden-layers must be non-negative and --neurons-per-hidden-layer must be positive")
     if args.learning_rate is not None and args.learning_rate <= 0:
         parser.error("--learning-rate must be positive")
+    if args.learning_decay <= 0:
+        parser.error("--learning-decay must be positive")
     if not args.train and not args.sweep:
         parser.error("select --train or --sweep")
     run_experiments(args)
