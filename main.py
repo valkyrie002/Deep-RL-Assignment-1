@@ -165,6 +165,39 @@ def initialize_experiment_model(hidden_layers=1, neurons_per_hidden_layer=64):
     )
 
 
+def save_checkpoint_artifact(model, output_dir, run_record, normalization_stats):
+    """Persist the best model state plus the normalization statistics needed to reuse it later."""
+    checkpoint_dir = Path(output_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    run_id = run_record.get("run_id")
+    if run_id is None:
+        raise ValueError("run_record must include a run_id before saving a checkpoint")
+    checkpoint_path = checkpoint_dir / f"{run_id}.pt"
+    checkpoint_payload = {
+        "run_id": run_id,
+        "model_state_dict": model.state_dict(),
+        "config": {
+            "training_size": run_record.get("training_size"),
+            "learning_rate": run_record.get("learning_rate"),
+            "learning_decay": run_record.get("learning_decay"),
+            "batch_size": run_record.get("batch_size"),
+            "epochs": run_record.get("epochs"),
+            "replicate_seed": run_record.get("replicate_seed"),
+            "hidden_layers": run_record.get("hidden_layers"),
+            "neurons_per_hidden_layer": run_record.get("neurons_per_hidden_layer"),
+            "optimizer": run_record.get("optimizer"),
+        },
+        "normalization": {key: value.squeeze(0).tolist() if hasattr(value, "squeeze") else value for key, value in normalization_stats.items()},
+        "metrics": {
+            "best_eval_rmse": run_record.get("best_eval_rmse"),
+            "best_epoch": run_record.get("best_epoch"),
+            "training_time_seconds": run_record.get("training_time_seconds"),
+        },
+    }
+    torch.save(checkpoint_payload, checkpoint_path)
+    return checkpoint_path
+
+
 def run_experiments(args):
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"dataset not found: {DATA_PATH}")
@@ -214,6 +247,7 @@ def run_experiments(args):
                 "seed": replicate_seed,
             }
             run_started_at = datetime.now(timezone.utc).isoformat()
+            run_id = uuid.uuid4().hex
 
             model, metrics = train_model(
                 train_features,
@@ -235,7 +269,7 @@ def run_experiments(args):
                 scale=statistics["label_std"].item(),
             )
             run_record = {
-                "run_id": uuid.uuid4().hex,
+                "run_id": run_id,
                 "run_started_at_utc": run_started_at,
                 "dataset": str(DATA_PATH),
                 "training_permutation_seed": 0,
@@ -257,6 +291,10 @@ def run_experiments(args):
                 },
                 **metrics,
             }
+            if args.checkpoint:
+                checkpoint_dir = output_path.parent / "checkpoints"
+                checkpoint_path = save_checkpoint_artifact(model, checkpoint_dir, run_record, statistics)
+                run_record["checkpoint_path"] = str(checkpoint_path)
             output_file.write(json.dumps(run_record) + "\n")
             output_file.flush()
             print(json.dumps(run_record))

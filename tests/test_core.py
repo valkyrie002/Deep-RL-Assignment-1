@@ -8,6 +8,7 @@ from src.data_loader import (
     get_training_subset,
 )
 from src.training import train_model, evaluate_model, evaluate_model_rmse
+from main import save_checkpoint_artifact
 
 
 def test_neural_network_forward_pass():
@@ -154,3 +155,23 @@ def test_standardization_is_fitted_from_training_data_and_reversible():
     assert torch.allclose(denormalize_labels(normalized_labels, statistics), train_labels)
     assert normalized_eval_features.abs().max() > 1
     assert normalized_eval_labels.abs().max() > 1
+
+
+def test_save_checkpoint_artifact(tmp_path):
+    model = NeuralNetwork(3, 1, 1, 4)
+    stats = {
+        "feature_mean": torch.tensor([0.0, 0.0, 0.0]),
+        "feature_std": torch.tensor([1.0, 1.0, 1.0]),
+        "label_mean": torch.tensor([0.0]),
+        "label_std": torch.tensor([1.0]),
+    }
+    record = {"run_id": "abc123", "replicate_seed": 2, "training_size": 1000, "learning_rate": 1e-3}
+
+    checkpoint_path = save_checkpoint_artifact(model, tmp_path, record, stats)
+    payload = torch.load(checkpoint_path, weights_only=False)
+
+    assert checkpoint_path.name == "abc123.pt"
+    assert "model_state_dict" in payload
+    assert "normalization" in payload
+    assert payload["config"]["replicate_seed"] == 2
+    assert payload["normalization"]["label_std"] == 1.0
